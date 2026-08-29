@@ -10,11 +10,14 @@ set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-export OMARCHY_WINDOWS_DIR="$TMPDIR/win"
+test_root=$(mktemp -d)
+trap 'rm -rf "$test_root"' EXIT
+export HOME="$test_root/home"
+export OMARCHY_WINDOWS_DIR="$test_root/win"
 
 # Source the command's functions; the dispatcher just prints usage for "help".
+# HOME must already be isolated here because the command derives its legacy
+# compose and credential paths while it is sourced.
 set -- help
 source "$ROOT/bin/omarchy-windows-vm" >/dev/null 2>&1
 COMPOSE="$OMARCHY_WINDOWS_DIR/docker-compose.yml"
@@ -65,7 +68,6 @@ pass "privileged action whitelist accepts known actions and rejects the rest"
 # mount host / into the guest, so migration must ignore its volume paths and
 # reconstruct them from the current user's $HOME.
 rm -rf "$OMARCHY_WINDOWS_DIR"
-export HOME="$TMPDIR/home"
 mkdir -p "$HOME/.config/windows"
 LEGACY_COMPOSE_FILE="$HOME/.config/windows/docker-compose.yml"
 COMPOSE_FILE="$COMPOSE"
@@ -98,11 +100,11 @@ pass "migration reconstructs data paths from \$HOME and ignores tampered legacy 
 #     privileged bind mount the same way traversal would; the string check on
 #     the stored path cannot see it) ---
 rm -f "$COMPOSE"
-mkdir -p "$TMPDIR/realstore" "$TMPDIR/realshare"
-write 4G 2 64G dave pw UTC "$TMPDIR/realstore" "$TMPDIR/realshare"
+mkdir -p "$test_root/realstore" "$test_root/realshare"
+write 4G 2 64G dave pw UTC "$test_root/realstore" "$test_root/realshare"
 assert_mounts_safe || fail "real directory mount sources are accepted"
-ln -sfn / "$TMPDIR/evilshare"
-write 4G 2 64G dave pw UTC "$TMPDIR/realstore" "$TMPDIR/evilshare"
+ln -sfn / "$test_root/evilshare"
+write 4G 2 64G dave pw UTC "$test_root/realstore" "$test_root/evilshare"
 assert_mounts_safe && fail "a symlinked mount source must be refused"
 pass "bring-up refuses a symlinked mount source"
 
@@ -116,7 +118,7 @@ done
 pass "valid_path accepts normalized paths and rejects traversal"
 
 # --- credentials are stored privately and round-trip (incl. = in password) ---
-export CREDENTIALS_FILE="$TMPDIR/creds"
+export CREDENTIALS_FILE="$test_root/creds"
 write_credentials 'carol' 'p=a$$w"x'
 [[ $(stat -c '%a' "$CREDENTIALS_FILE") == "600" ]] || fail "credentials file is 0600"
 [[ $(read_credential USERNAME) == "carol" ]] || fail "username round-trips"

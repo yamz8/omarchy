@@ -4,6 +4,10 @@ set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
+# The positive animation cases control color support themselves. Do not let a
+# developer's inherited preference turn them into the NO_COLOR cases below.
+unset NO_COLOR
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 

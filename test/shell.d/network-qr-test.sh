@@ -8,6 +8,11 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
 
+cat >"$tmp/bin/ip" <<'EOF'
+#!/bin/bash
+exit 2
+EOF
+
 cat >"$tmp/bin/nmcli" <<'EOF'
 #!/bin/bash
 if [[ $* == *"DEVICE,TYPE,STATE"* ]]; then
@@ -28,7 +33,7 @@ payload=$(</dev/stdin)
 printf '%s' "$payload" >"$QR_PAYLOAD_FILE"
 printf '##    \n  ##  \n    ##\n'
 EOF
-chmod +x "$tmp/bin/nmcli" "$tmp/bin/qrencode"
+chmod +x "$tmp/bin/ip" "$tmp/bin/nmcli" "$tmp/bin/qrencode"
 
 run_success_case() {
   local description=$1 fields=$2 expected_payload=$3
@@ -81,7 +86,8 @@ run_success_case \
   'WIFI:T:WPA;S:Cafe\;Guest\\5G;P:p\,a\:ss\;word\\42;;' \
   wlan0
 
-# With no interface argument the helper finds the connected Wi-Fi device.
+# With no interface argument the helper falls back to NetworkManager when the
+# default-route probe is unavailable, as it is in restricted test sandboxes.
 run_success_case \
   "network QR helper detects the Wi-Fi interface" \
   $'Cafe Detected\nwpa-psk\nsecret\nno\n' \
