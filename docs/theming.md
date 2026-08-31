@@ -1,17 +1,16 @@
 # Omarchy theming
 
-Omarchy themes live under `themes/<name>/` in the source tree (installed at
-`/usr/share/omarchy/themes/<name>/`), with optional user themes under
-`~/.config/omarchy/themes/<name>/`. A theme normally starts with a
-`colors.toml`; Omarchy generates the active theme files from
-`default/themed/*.tpl` when `omarchy-theme-set <name>` runs.
+Omarchy themes live under `themes/<name>/` in the source tree (installed at `/usr/share/omarchy/themes/<name>/`), with optional user themes under `~/.config/omarchy/themes/<name>/`. A theme normally starts with a `colors.toml`; Omarchy generates the active theme files from `default/themed/*.tpl` when `omarchy-theme-set <name>` runs.
 
-Beyond `colors.toml` and hand-written config overrides, a first-party theme can
-ship `backgrounds/` (users overlay their own via
-`~/.config/omarchy/backgrounds/<name>/`; the active image is the
-`~/.local/state/omarchy/current/background` symlink), `preview.png` and
-`preview-unlock.png` for the theme switcher, `icons.theme`, `keyboard.rgb`,
-`unlock.png`, and a `light.mode` marker file.
+Beyond `colors.toml` and hand-written config overrides, a first-party theme can ship `backgrounds/` (users overlay their own via `~/.config/omarchy/backgrounds/<name>/`; the active image is the `~/.local/state/omarchy/current/background` symlink), matching login videos under `intros/`, `preview.png` and `preview-unlock.png` for the theme switcher, `icons.theme`, `keyboard.rgb`, `unlock.png`, and a `light.mode` marker file.
+
+### Login intro videos
+
+A trusted first-party theme or a theme the user wrote locally can provide `intros/<background-sha256>.mp4` or `intros/<background-sha256>.webm`. Calculate the name from the corresponding background file with `sha256sum`. The shell selects the video by image content, so renaming a background does not break the association and identical images share the same intro.
+
+The preferred clip is silent, no longer than 30 seconds, and begins and ends on the matching background image. Playback crops like the background renderer and fades into the actual background during its final 450 milliseconds. A user-installed clip created with `omarchy theme intro set <video>` overrides a theme clip for that image.
+
+Themes cloned by `omarchy theme install` cannot supply `intros/`. Those repositories are untrusted, and Omarchy does not automatically decode media from them at login. A user who trusts a clip can install it explicitly with `omarchy theme intro set`.
 
 A theme installed from a git repo is held to a much shorter list; see [What an installed theme may not ship](#what-an-installed-theme-may-not-ship).
 
@@ -49,13 +48,14 @@ instead of racing.
 
 `themes/<name>/` in this repo is Omarchy's own code and is trusted. So is a theme the user wrote by hand in `~/.config/omarchy/themes/<name>/`: it is their machine and their file, and both stage in full.
 
-`omarchy theme install <url>` is different. It clones a stranger's git repo straight into that same directory, so the contents are whatever the theme author pushed. `omarchy-theme-set` tells the two apart the way `omarchy-theme-extras` already does — a `.git` directory means it was cloned, while a plain directory or a symlink to a working copy is the user's own — and from a cloned one it drops only what can run code:
+`omarchy theme install <url>` is different. It clones a stranger's git repo straight into that same directory, so the contents are whatever the theme author pushed. `omarchy-theme-set` tells the two apart the way `omarchy-theme-extras` already does — a `.git` directory means it was cloned, while a plain directory or a symlink to a working copy is the user's own — and from a cloned one it drops executable configuration and automatically decoded media:
 
 - any `*.lua` — Hyprland `require`s a theme's `hyprland.lua` and `gum_env.lua` at login, and Neovim loads its `neovim.lua` at startup
 - `alacritty.toml`, `foot.ini`, `ghostty.conf`, `kitty.conf` — each names the program the terminal launches
 - `vscode.json` — names the extension `omarchy-theme-set-vscode` installs, and a VS Code extension is arbitrary JavaScript
+- `intros/` — would otherwise be decoded automatically as login media without the user selecting the file
 
-Symlinks are dropped with them, at any depth; in a cloned theme they point wherever the theme author chose. Everything a cloned theme ships that is colour is kept, including files Omarchy would otherwise have generated — `btop.theme`, `chromium.theme`, `helix.toml`, `shell.toml`, `icons.theme`, `keyboard.rgb` and the rest — so a theme can still say exactly how it wants each app to look. What is dropped gets generated from `default/themed/*.tpl` instead, and is named on stderr.
+Symlinks are dropped with them, at any depth; in a cloned theme they point wherever the theme author chose. Everything a cloned theme ships that is colour or inert artwork is kept, including files Omarchy would otherwise have generated — `btop.theme`, `chromium.theme`, `helix.toml`, `shell.toml`, `icons.theme`, `keyboard.rgb` and the rest — so a theme can still say exactly how it wants each app to look. What is dropped gets generated from `default/themed/*.tpl` instead, and is named on stderr.
 
 A denylist is only right while it is maintained. Adding a template for another terminal, or for another editor that loads Lua, means adding it to `INSTALLED_THEME_DENIED` in `bin/omarchy-theme-set`; `test/shell.d/theme-staging-test.sh` fails on any `default/themed/*.tpl` whose output is recorded as neither code nor colour, so a new template cannot be added without that decision being made.
 

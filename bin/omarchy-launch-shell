@@ -14,7 +14,26 @@
 # A package upgrade rewriting $OMARCHY_PATH/shell would otherwise reload it
 # against a half-written tree, and that failed reload leaves a second engine
 # generation behind that turns the next restart's IPC kill into a crash.
+prepare_login_intro() {
+  local runtime_dir=${XDG_RUNTIME_DIR:-}
+  local signature=${HYPRLAND_INSTANCE_SIGNATURE:-}
+  local marker resolution
+
+  unset OMARCHY_LOGIN_INTRO_RESOLUTION
+  [[ -n $runtime_dir && -n $signature ]] || return
+
+  marker="$runtime_dir/hypr/$signature/omarchy-login-intro-played"
+  if mkdir "$marker" 2>/dev/null; then
+    resolution=$(omarchy-theme-intro resolve 2>/dev/null || true)
+    if [[ -n $resolution ]]; then
+      export OMARCHY_LOGIN_INTRO_RESOLUTION=$resolution
+    fi
+  fi
+}
+
 run_shell() {
+  prepare_login_intro
+
   QS_DISABLE_FILE_WATCHER=1 QS_NO_RELOAD_POPUP=1 \
     systemd-cat -t omarchy-shell -- quickshell -n -p "$OMARCHY_PATH/shell" &
   shell_pid=$!

@@ -1,0 +1,233 @@
+#!/bin/bash
+
+# omarchy:summary=Manage the login intro for the current background
+# omarchy:group=theme
+# omarchy:name=intro
+# omarchy:args=<set|preview|remove|status> [video]
+# omarchy:examples=omarchy theme intro set ~/Videos/intro.mp4 | omarchy theme intro preview | omarchy theme intro remove
+
+set -euo pipefail
+
+CURRENT_BACKGROUND_LINK="$HOME/.local/state/omarchy/current/background"
+CURRENT_THEME_PATH="$HOME/.local/state/omarchy/current/theme"
+USER_INTRO_DIR="$HOME/.local/share/omarchy/login-intros"
+STOCK_INTRO_DIR="$OMARCHY_PATH/assets/login-intros"
+DISABLED_FILE="$HOME/.local/state/omarchy/toggles/login-intro-disabled"
+
+CURRENT_BACKGROUND=""
+BACKGROUND_HASH=""
+RESOLVED_ENABLED=true
+RESOLVED_MODE="procedural"
+RESOLVED_VIDEO=""
+RESOLVED_SOURCE="procedural"
+RESOLVED_REASON=""
+TEMP_VIDEO=""
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  omarchy theme intro set <video>
+  omarchy theme intro preview
+  omarchy theme intro remove
+  omarchy theme intro status
+
+With no custom video, Omarchy animates the current background with a subtle
+camera-settle effect. A custom video is stored against the current image's
+content hash, so it is only used with that exact background.
+USAGE
+}
+
+cleanup() {
+  if [[ -n $TEMP_VIDEO && -f $TEMP_VIDEO ]]; then
+    rm -f -- "$TEMP_VIDEO"
+  fi
+}
+trap cleanup EXIT
+
+load_current_background() {
+  CURRENT_BACKGROUND=$(readlink -f "$CURRENT_BACKGROUND_LINK" 2>/dev/null || true)
+  if [[ ! -f $CURRENT_BACKGROUND ]]; then
+    CURRENT_BACKGROUND=""
+    BACKGROUND_HASH=""
+    return 1
+  fi
+
+  BACKGROUND_HASH=$(sha256sum "$CURRENT_BACKGROUND" | cut -d' ' -f1)
+}
+
+animations_enabled() {
+  local enabled
+
+  enabled=$(hyprctl getoption animations:enabled -j 2>/dev/null |
+    jq -r 'if has("bool") then .bool elif has("int") then (.int != 0) else empty end' 2>/dev/null) || return 0
+  [[ -z $enabled ]] && return 0
+  [[ $enabled == "true" ]]
+}
+
+find_intro_video() {
+  local directory extension
+
+  RESOLVED_VIDEO=""
+  RESOLVED_SOURCE="procedural"
+  for directory in "$USER_INTRO_DIR" "$CURRENT_THEME_PATH/intros" "$STOCK_INTRO_DIR"; do
+    for extension in mp4 webm; do
+      if [[ -f $directory/$BACKGROUND_HASH.$extension ]]; then
+        RESOLVED_VIDEO="$directory/$BACKGROUND_HASH.$extension"
+        if [[ $directory == $USER_INTRO_DIR ]]; then
+          RESOLVED_SOURCE="user"
+        elif [[ $directory == $CURRENT_THEME_PATH/intros ]]; then
+          RESOLVED_SOURCE="theme"
+        else
+          RESOLVED_SOURCE="stock"
+        fi
+        return
+      fi
+    done
+  done
+}
+
+load_resolution() {
+  local ignore_guards=${1:-0}
+
+  RESOLVED_ENABLED=true
+  RESOLVED_MODE="procedural"
+  RESOLVED_VIDEO=""
+  RESOLVED_SOURCE="procedural"
+  RESOLVED_REASON=""
+
+  if ! load_current_background; then
+    RESOLVED_ENABLED=false
+    RESOLVED_MODE="unavailable"
+    RESOLVED_SOURCE="none"
+    RESOLVED_REASON="no-background"
+    return
+  fi
+
+  if (( !ignore_guards )) && [[ -f $DISABLED_FILE ]]; then
+    RESOLVED_ENABLED=false
+    RESOLVED_MODE="disabled"
+    RESOLVED_SOURCE="none"
+    RESOLVED_REASON="disabled"
+    return
+  fi
+
+  if (( !ignore_guards )) && ! animations_enabled; then
+    RESOLVED_ENABLED=false
+    RESOLVED_MODE="disabled"
+    RESOLVED_SOURCE="none"
+    RESOLVED_REASON="animations-disabled"
+    return
+  fi
+
+  find_intro_video
+  if [[ -n $RESOLVED_VIDEO ]]; then
+    RESOLVED_MODE="video"
+  fi
+}
+
+print_resolution() {
+  jq -cn \
+    --argjson enabled "$RESOLVED_ENABLED" \
+    --arg mode "$RESOLVED_MODE" \
+    --arg video "$RESOLVED_VIDEO" \
+    --arg background "$CURRENT_BACKGROUND" \
+    --arg hash "$BACKGROUND_HASH" \
+    --arg source "$RESOLVED_SOURCE" \
+    --arg reason "$RESOLVED_REASON" \
+    '{enabled:$enabled,mode:$mode,video:$video,background:$background,hash:$hash,source:$source,reason:$reason}'
+}
+
+set_intro() {
+  if (( $# != 1 )); then
+    echo "Usage: omarchy theme intro set <video>" >&2
+    exit 1
+  fi
+
+  local source=$1 output
+  if [[ ! -f $source ]]; then
+    echo "Video does not exist: $source" >&2
+    exit 1
+  fi
+  source=$(realpath -- "$source")
+
+  if ! load_current_background; then
+    echo "No current background is set." >&2
+    exit 1
+  fi
+
+  mkdir -p "$USER_INTRO_DIR"
+  output="$USER_INTRO_DIR/$BACKGROUND_HASH.mp4"
+  TEMP_VIDEO=$(mktemp --tmpdir="$USER_INTRO_DIR" --suffix=.mp4 ".$BACKGROUND_HASH.XXXXXX")
+
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$source" \
+    -map 0:v:0 -an \
+    -t 30 \
+    -vf "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2" \
+    -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -movflags +faststart \
+    "$TEMP_VIDEO"
+
+  mv -- "$TEMP_VIDEO" "$output"
+  TEMP_VIDEO=""
+  printf 'Installed login intro for %s\n%s\n' "$CURRENT_BACKGROUND" "$output"
+}
+
+preview_intro() {
+  load_resolution 1
+  if [[ $RESOLVED_MODE == "unavailable" ]]; then
+    echo "No current background is set." >&2
+    exit 1
+  fi
+
+  omarchy-shell background previewIntro "$RESOLVED_VIDEO" "$CURRENT_BACKGROUND"
+}
+
+remove_intro() {
+  if ! load_current_background; then
+    echo "No current background is set." >&2
+    exit 1
+  fi
+
+  local removed=0 extension path
+  for extension in mp4 webm; do
+    path="$USER_INTRO_DIR/$BACKGROUND_HASH.$extension"
+    if [[ -f $path ]]; then
+      rm -f -- "$path"
+      removed=1
+    fi
+  done
+
+  if (( removed )); then
+    echo "Removed the custom login intro for $CURRENT_BACKGROUND"
+  else
+    echo "No custom login intro was set for $CURRENT_BACKGROUND"
+  fi
+}
+
+case "${1:-}" in
+  resolve)
+    load_resolution
+    print_resolution
+    ;;
+  status)
+    load_resolution
+    print_resolution
+    ;;
+  set)
+    shift
+    set_intro "$@"
+    ;;
+  preview)
+    preview_intro
+    ;;
+  remove|reset)
+    remove_intro
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

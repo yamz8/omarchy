@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# omarchy:summary=Toggle the animated login intro
+# omarchy:group=toggle
+# omarchy:name=login-intro
+# omarchy:args=[toggle|on|off|status]
+# omarchy:examples=omarchy toggle login-intro | omarchy toggle login-intro off | omarchy toggle login-intro status
+
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/omarchy/toggles"
+DISABLED_FILE="$STATE_DIR/login-intro-disabled"
+
+intro_enabled() {
+  [[ ! -f $DISABLED_FILE ]]
+}
+
+print_state() {
+  if intro_enabled; then
+    echo "enabled"
+  else
+    echo "disabled"
+  fi
+}
+
+enable_intro() {
+  rm -f -- "$DISABLED_FILE"
+}
+
+disable_intro() {
+  mkdir -p "$STATE_DIR"
+  touch "$DISABLED_FILE"
+  omarchy-shell -q background stopIntro >/dev/null 2>&1
+}
+
+case "${1:-toggle}" in
+  toggle)
+    if intro_enabled; then
+      disable_intro
+    else
+      enable_intro
+    fi
+    print_state
+    ;;
+  on|enable|enabled)
+    enable_intro
+    print_state
+    ;;
+  off|disable|disabled)
+    disable_intro
+    print_state
+    ;;
+  status|--status)
+    print_state
+    ;;
+  -h|--help)
+    echo "Usage: omarchy toggle login-intro [toggle|on|off|status]"
+    ;;
+  *)
+    echo "Usage: omarchy toggle login-intro [toggle|on|off|status]" >&2
+    exit 1
+    ;;
+esac

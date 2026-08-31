@@ -13,6 +13,7 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateHome: home + "/.local/state"
   readonly property string currentBackgroundLink: stateHome + "/omarchy/current/background"
+  readonly property string initialIntroResolution: Quickshell.env("OMARCHY_LOGIN_INTRO_RESOLUTION")
 
   property string currentBackground: ""
   property string displayedBackground: ""
@@ -25,6 +26,7 @@ Item {
   property string pendingColorsRaw: ""
   property string pendingShellRaw: ""
   property real revealProgress: 1
+  property bool automaticIntroAttempted: false
 
   function imageUrl(path) {
     return Util.fileUrl(path)
@@ -32,6 +34,23 @@ Item {
 
   function refreshBackground() {
     if (!readlinkProc.running) readlinkProc.running = true
+  }
+
+  function startAutomaticIntro() {
+    if (automaticIntroAttempted || !currentBackground) return
+    automaticIntroAttempted = true
+    if (initialIntroResolution) applyIntroResolution(initialIntroResolution)
+  }
+
+  function applyIntroResolution(raw) {
+    var resolved = null
+    try { resolved = JSON.parse(String(raw || "")) } catch (e) {
+      console.warn("login intro resolution failed:", e)
+      return
+    }
+    var resolvedBackground = String(resolved && resolved.background || "").trim()
+    if (!resolved || resolved.enabled !== true || resolvedBackground !== currentBackground) return
+    loginIntro.start(String(resolved.video || ""), resolvedBackground)
   }
 
   function setBackground(path, instant) {
@@ -44,6 +63,7 @@ Item {
     fromPath = String(fromPath || "").trim()
     if (!path || (!force && finalPath === currentBackground)) return
     currentBackground = finalPath
+    if (loginIntro.running && finalPath !== loginIntro.backgroundPath) loginIntro.stop()
     backgroundVersion += 1
     revealStartedVersion = -1
 
@@ -55,6 +75,7 @@ Item {
       incomingBackground = ""
       displayedBackground = path
       revealProgress = 1
+      startAutomaticIntro()
       return
     }
 
@@ -128,6 +149,10 @@ Item {
     }
   }
 
+  LoginIntro {
+    id: loginIntro
+  }
+
   IpcHandler {
     target: "background"
 
@@ -149,6 +174,19 @@ Item {
 
     function themeTransition(fromPath: string, path: string, finalPath: string, colorsB64: string, shellB64: string): void {
       root.transitionBackgroundWithTheme(fromPath, path, finalPath, colorsB64, shellB64)
+    }
+
+    function previewIntro(videoPath: string, backgroundPath: string): string {
+      var target = String(backgroundPath || "").trim() || root.currentBackground
+      return loginIntro.start(videoPath, target) ? "ok" : "no-background"
+    }
+
+    function stopIntro(): void {
+      loginIntro.stop()
+    }
+
+    function introStatus(): string {
+      return JSON.stringify(loginIntro.statusObject())
     }
   }
 

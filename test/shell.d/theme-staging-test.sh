@@ -3,9 +3,9 @@
 set -euo pipefail
 
 # A theme installed with `omarchy theme install` is a stranger's git repo, so
-# omarchy-theme-set drops the files that would run its code -- Lua, terminal
-# configs, vscode.json -- and keeps the colour. A theme the user wrote themselves
-# is not filtered at all.
+# omarchy-theme-set drops files that would run its code, plus media the shell
+# would decode automatically at login, and keeps colour and inert artwork. A
+# theme the user wrote themselves is not filtered at all.
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
@@ -66,7 +66,7 @@ TOML
 
 # A theme that ships everything it is not allowed to ship.
 hostile="$themes/hostile"
-mkdir -p "$hostile/backgrounds" "$hostile/.git"
+mkdir -p "$hostile/backgrounds" "$hostile/intros" "$hostile/.git"
 write_colors "$hostile/colors.toml"
 touch "$hostile/light.mode"
 printf 'os.execute("%s")\n' "$marker" >"$hostile/hyprland.lua"
@@ -82,6 +82,7 @@ printf 'Yaru-red\n' >"$hostile/icons.theme"
 printf 'theme[main_bg]="#000000"\n' >"$hostile/btop.theme"
 printf 'png\n' >"$hostile/preview.png"
 printf 'png\n' >"$hostile/backgrounds/1-real.png"
+printf 'untrusted video\n' >"$hostile/intros/deadbeef.mp4"
 printf '%s\n' "$marker" >"$hostile/backgrounds/payload.sh"
 printf '# notes\n' >"$hostile/README.md"
 ln -s /etc/hostname "$hostile/unlock.png"
@@ -93,6 +94,7 @@ grep -q '#7aa2f7' "$(staged colors.toml)" || fail "the staged colors.toml is the
 assert_staged light.mode "the light mode marker is staged"
 assert_staged preview.png "the theme's preview image is staged"
 assert_staged backgrounds/1-real.png "an image in backgrounds/ is staged"
+assert_not_staged intros "an installed theme cannot add automatically decoded login media"
 
 assert_not_staged unlock.png "a symlink is not followed out of the theme"
 assert_not_staged vscode.json "vscode.json names an extension to install and is not staged"
@@ -117,7 +119,7 @@ grep -q '000000' "$(staged shell.toml)" || fail "an installed theme's shell.toml
 grep -q 'hyprland.lua' "$test_tmp/stderr" || fail "omarchy-theme-set names the files it ignored"
 ! grep -q 'README.md' "$test_tmp/stderr" || fail "omarchy-theme-set does not report a theme's documentation"
 
-pass "an installed theme keeps its colour and loses everything that runs code"
+pass "an installed theme keeps styling and inert artwork while dropping active content"
 
 # icons.theme is staged verbatim and handed to gsettings, so a symlinked one
 # would stage a copy of whatever it points at.
@@ -175,14 +177,16 @@ pass "an overlay on a stock theme repaints it without adding code"
 
 # A theme the user wrote themselves has no git repo behind it and is theirs.
 mine="$themes/mine"
-mkdir -p "$mine"
+mkdir -p "$mine/intros"
 write_colors "$mine/colors.toml"
 printf 'os.execute("%s")\n' "$marker" >"$mine/hyprland.lua"
 printf '{"name":"Mine","extension":"pub.ext"}\n' >"$mine/vscode.json"
+printf 'trusted video\n' >"$mine/intros/deadbeef.mp4"
 
 set_theme mine || fail "omarchy-theme-set applies a theme the user wrote"
 grep -q "$marker" "$(staged hyprland.lua)" || fail "a theme the user wrote keeps its own hyprland.lua"
 assert_staged vscode.json "a theme the user wrote keeps every file it ships"
+assert_staged intros/deadbeef.mp4 "a theme the user wrote may supply its own login intro"
 [[ ! -s $test_tmp/stderr ]] || fail "a theme the user wrote reports nothing ignored" "$(cat "$test_tmp/stderr")"
 
 pass "a theme the user wrote is not held to the installed-theme list"

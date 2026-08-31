@@ -20,7 +20,11 @@ trap cleanup EXIT
 
 fake_bin="$test_tmp/bin"
 shell_root="$test_tmp/root"
-mkdir -p "$fake_bin" "$shell_root/shell"
+intro_runtime="$test_tmp/runtime"
+intro_signature="test-hyprland-instance"
+intro_log="$test_tmp/login-intro.log"
+mkdir -p "$fake_bin" "$shell_root/shell" "$intro_runtime/hypr/$intro_signature"
+: >"$intro_log"
 
 # Each launch consumes the next status from OMARCHY_TEST_QS_STATUSES; "run"
 # stands in for a healthy shell that keeps going until stopped.
@@ -30,6 +34,7 @@ cat >"$fake_bin/quickshell" <<'SH'
 printf '%s\n' "$*" >>"$OMARCHY_TEST_QS_LOG"
 printf 'watcher=%s popup=%s\n' \
   "${QS_DISABLE_FILE_WATCHER:-unset}" "${QS_NO_RELOAD_POPUP:-unset}" >>"$OMARCHY_TEST_QS_ENV_LOG"
+printf 'intro=%s\n' "${OMARCHY_LOGIN_INTRO_RESOLUTION:-unset}" >>"$OMARCHY_TEST_QS_ENV_LOG"
 
 launches=$(wc -l <"$OMARCHY_TEST_QS_LOG")
 status=$(awk -v n="$launches" 'NR == n { print; found = 1 } END { if (!found) print "0" }' <<<"$OMARCHY_TEST_QS_STATUSES")
@@ -40,6 +45,13 @@ if [[ $status == "run" ]]; then
 fi
 
 exit "${status:-0}"
+SH
+
+cat >"$fake_bin/omarchy-theme-intro" <<'SH'
+#!/bin/bash
+
+printf '%s\n' "$*" >>"$OMARCHY_TEST_INTRO_LOG"
+printf '{"enabled":true,"mode":"procedural","video":"","background":"/test/background"}\n'
 SH
 
 cat >"$fake_bin/systemd-cat" <<'SH'
@@ -76,7 +88,7 @@ shift 2
 printf '%s\n' "$*" >>"$OMARCHY_TEST_LOGGER_LOG"
 SH
 
-chmod +x "$fake_bin/quickshell" "$fake_bin/systemd-cat" "$fake_bin/hyprctl" "$fake_bin/logger"
+chmod +x "$fake_bin/quickshell" "$fake_bin/systemd-cat" "$fake_bin/hyprctl" "$fake_bin/logger" "$fake_bin/omarchy-theme-intro"
 
 qs_log="$test_tmp/quickshell.log"
 qs_env_log="$test_tmp/quickshell-env.log"
@@ -99,6 +111,9 @@ launch_shell() {
   OMARCHY_TEST_QS_TERMINATED="$qs_terminated" \
   OMARCHY_TEST_HYPRCTL_MISSES="${3:-0}" \
   OMARCHY_TEST_HYPRCTL_MISS_COUNT="$hyprctl_misses" \
+  OMARCHY_TEST_INTRO_LOG="$intro_log" \
+  XDG_RUNTIME_DIR="$intro_runtime" \
+  HYPRLAND_INSTANCE_SIGNATURE="$intro_signature" \
     timeout 30 "$ROOT/bin/omarchy-launch-shell"
 }
 
@@ -113,9 +128,20 @@ pass "a shell that exits cleanly is left alone"
 
 # A misspelled variable would leave Quickshell hot-reloading the tree pacman
 # rewrites underneath it, which is what crashes the restart that follows.
-[[ $(<"$qs_env_log") == "watcher=1 popup=1" ]] ||
+grep -Fx 'watcher=1 popup=1' "$qs_env_log" >/dev/null ||
   fail "the shell launches with Quickshell's own reloading off" "$(<"$qs_env_log")"
 pass "the shell launches with Quickshell's config watcher and reload popup off"
+
+grep -F 'intro={"enabled":true,"mode":"procedural","video":"","background":"/test/background"}' "$qs_env_log" >/dev/null ||
+  fail "the first shell receives the prepared login intro" "$(<"$qs_env_log")"
+[[ $(wc -l <"$intro_log") == 1 ]] || fail "the login intro is resolved once on the first shell launch"
+[[ -d $intro_runtime/hypr/$intro_signature/omarchy-login-intro-played ]] || fail "the login intro session marker is persisted"
+pass "the first shell launch receives a prepared login intro"
+
+launch_shell '0' || fail "a second launcher invocation succeeds"
+grep -Fx 'intro=unset' "$qs_env_log" >/dev/null || fail "a second launcher invocation does not replay the intro" "$(<"$qs_env_log")"
+[[ $(wc -l <"$intro_log") == 1 ]] || fail "the login intro resolver is not called twice in one session"
+pass "a second shell launch in the session does not replay the intro"
 
 # Qt leaves through _exit(), so Quickshell's crash handler never relaunches it.
 launch_shell $'255\n0' || fail "a shell that died on a Wayland error is relaunched"
@@ -152,6 +178,9 @@ OMARCHY_TEST_QS_STATUSES=$'255\n0' \
 OMARCHY_TEST_COMPOSITOR_GONE=0 \
 OMARCHY_TEST_LOGGER_LOG="$logger_log" \
 OMARCHY_TEST_QS_TERMINATED="$qs_terminated" \
+OMARCHY_TEST_INTRO_LOG="$intro_log" \
+XDG_RUNTIME_DIR="$intro_runtime" \
+HYPRLAND_INSTANCE_SIGNATURE="$intro_signature" \
   "$ROOT/bin/omarchy-launch-shell" &
 launch_pid=$!
 
@@ -181,6 +210,9 @@ OMARCHY_TEST_QS_STATUSES='run' \
 OMARCHY_TEST_COMPOSITOR_GONE=0 \
 OMARCHY_TEST_LOGGER_LOG="$logger_log" \
 OMARCHY_TEST_QS_TERMINATED="$qs_terminated" \
+OMARCHY_TEST_INTRO_LOG="$intro_log" \
+XDG_RUNTIME_DIR="$intro_runtime" \
+HYPRLAND_INSTANCE_SIGNATURE="$intro_signature" \
   "$ROOT/bin/omarchy-launch-shell" &
 launch_pid=$!
 
