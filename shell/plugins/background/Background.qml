@@ -37,6 +37,12 @@ Item {
   property var sizeQueue: []
   property bool finishingTransition: false
   property int backgroundVersion: 0
+  // The first shell of a boot starts the background's intro. OWE can come up
+  // after the shell at login, so a start it cannot take yet is retried.
+  property bool bootIntroChecked: false
+  property int bootIntroAttempts: 0
+  readonly property int bootIntroMaxAttempts: 60
+  readonly property int bootIntroRetryInterval: 1000
   property int revealStartedVersion: -1
   property int pendingThemeVersion: -1
   property string pendingColorsRaw: ""
@@ -57,6 +63,13 @@ Item {
 
   function setBackground(path, instant) {
     transitionBackground("", path, path, instant, false)
+  }
+
+  function checkBootIntro() {
+    if (bootIntroChecked || bootIntroProc.running) return
+    bootIntroChecked = true
+    bootIntroAttempts += 1
+    bootIntroProc.running = true
   }
 
   function transitionBackground(fromPath, path, finalPath, instant, force) {
@@ -204,8 +217,33 @@ Item {
     id: readlinkProc
     command: ["readlink", "-f", root.currentBackgroundLink]
     stdout: StdioCollector {
-      onStreamFinished: root.setBackground(String(text || "").trim(), false)
+      onStreamFinished: {
+        root.setBackground(String(text || "").trim(), false)
+        root.checkBootIntro()
+      }
     }
+  }
+
+  // The launcher plays the intro at most once per boot, so later shells of the
+  // same boot return at once. OWE opens the intro on the still this layer is
+  // already showing and settles back onto it, so nothing covers the still.
+  // Exit 2 means OWE never started it, usually because OWE is not up yet.
+  Process {
+    id: bootIntroProc
+    command: ["omarchy-theme-bg-boot-intro"]
+    onExited: function(exitCode) {
+      if (exitCode === 2 && root.bootIntroAttempts < root.bootIntroMaxAttempts) {
+        root.bootIntroChecked = false
+        bootIntroRetry.restart()
+      }
+    }
+  }
+
+  Timer {
+    id: bootIntroRetry
+    interval: root.bootIntroRetryInterval
+    repeat: false
+    onTriggered: root.checkBootIntro()
   }
 
   ShellIpc {

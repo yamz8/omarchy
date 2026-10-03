@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# omarchy:summary=Toggle the intro a background plays once per boot
+
+omarchy-toggle background-intros-off
+
+if omarchy-toggle-enabled background-intros-off; then
+  omarchy-notification-send -g 󰕧 "Background intros disabled"
+else
+  omarchy-notification-send -g 󰕧 "Background intros enabled"
+fi

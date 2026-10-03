@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# omarchy:summary=Play the current background's intro once per boot
+# omarchy:hidden=true
+
+set -euo pipefail
+
+state_dir="$HOME/.local/state/omarchy"
+background_link="$state_dir/current/background"
+marker="$state_dir/background-intro.boot-id"
+lock="$state_dir/background-intro.lock"
+boot_id=${OMARCHY_BOOT_ID:-$(< /proc/sys/kernel/random/boot_id)}
+
+# A still's intro sits in intros/ beside it under the same name, so a theme's
+# backgrounds and a user's own resolve the same way.
+resolve_intro() {
+  local background
+  local stem
+  local extension
+
+  background=$(readlink -f "$background_link") || return 0
+  [[ -f $background ]] || return 0
+
+  case ${background,,} in
+  *.jpg | *.jpeg | *.png | *.bmp | *.webp) ;;
+  *) return 0 ;;
+  esac
+
+  stem=$(basename "${background%.*}")
+  for extension in mp4 m4v mov webm mkv avi; do
+    if [[ -f ${background%/*}/intros/$stem.$extension ]]; then
+      printf '%s\n' "${background%/*}/intros/$stem.$extension"
+      return 0
+    fi
+  done
+}
+
+# With animations off, the desktop starts on the still: that is the default in
+# a VM, where Hyprland renders on the CPU and a video intro costs the most.
+animations_off() {
+  [[ $(hyprctl -j getoption animations:enabled 2>/dev/null | jq -r '.bool' 2>/dev/null) == "false" ]]
+}
+
+consume_boot() {
+  # Not local: errexit unwinds a function's locals before the EXIT trap runs,
+  # so the trap would find no path and leave the staged marker behind.
+  marker_staged=$(mktemp "$state_dir/.background-intro.boot-id.XXXXXX")
+  trap 'rm -f "$marker_staged"' EXIT
+  printf '%s\n' "$boot_id" >"$marker_staged"
+  mv -f "$marker_staged" "$marker"
+  trap - EXIT
+}
+
+mkdir -p "$state_dir"
+exec 9>"$lock"
+flock 9
+
+if [[ -f $marker && $(<"$marker") == "$boot_id" ]]; then
+  exit 0
+fi
+
+intro=""
+if ! omarchy-toggle-enabled background-intros-off && ! animations_off; then
+  intro=$(resolve_intro)
+fi
+
+# Consume the boot before playback so a shell restart mid-intro cannot replay
+# it. `owe intro` blocks until the intro ends and fails both when OWE rejects it
+# and when something interrupts it. OWE leaves intro_result empty until it has
+# accepted an intro, so only a never-started intro releases the boot for the
+# shell's bounded retry.
+consume_boot
+if [[ -z $intro ]]; then
+  exit 0
+fi
+
+if ! owe intro "$intro"; then
+  intro_result=$(owe status 2>/dev/null | jq -r '.intro_result // empty' 2>/dev/null || true)
+  if [[ -z $intro_result ]]; then
+    rm -f "$marker"
+    exit 2
+  fi
+  exit 1
+fi

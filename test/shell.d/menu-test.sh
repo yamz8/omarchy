@@ -346,6 +346,11 @@ assert(
   !defaultById['trigger.toggle.direct-boot'] && !defaultById['trigger.toggle.passwordless-sudo'],
   'menu removes the relocated toggles from Trigger > Toggle'
 )
+assertEqual(
+  defaultById['trigger.toggle.background-intros'].action,
+  'omarchy-toggle-background-intros',
+  'menu turns background intros off and on under Trigger > Toggle'
+)
 assert(
   defaultById['style.bar.position'].kind === 'menu',
   'menu groups Menu Bar positions in a submenu'
