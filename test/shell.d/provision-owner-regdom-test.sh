@@ -114,6 +114,31 @@ configure_timezone >/dev/null
 [[ ! -s $calls ]] || fail "a timezone without a country leaves the radios alone" "$(cat "$calls")"
 pass "a timezone without a country sets no regulatory domain"
 
+# The pickers offer every name timedatectl lists, and zone.tab leaves the older
+# ones out: they are links in tzdata.zi, some to a zone several countries share.
+older_names() {
+  : >"$root/usr/share/zoneinfo/Israel"
+  : >"$root/usr/share/zoneinfo/Iceland"
+  printf 'IL\t+314650+0351326\tAsia/Jerusalem\nCI\t+0519-00402\tAfrica/Abidjan\nIS\t+6409-02151\tAtlantic/Reykjavik\n' \
+    >>"$root/usr/share/zoneinfo/zone.tab"
+  printf 'Z Asia/Jerusalem 2:20:54 - LMT 1880\nL Asia/Jerusalem Israel\nL Africa/Abidjan Iceland\nL Africa/Abidjan Atlantic/Reykjavik\n' \
+    >"$root/usr/share/zoneinfo/tzdata.zi"
+}
+
+fresh_root
+older_names
+timezone=Israel
+configure_timezone >/dev/null
+[[ $(regdom_lines) == 'WIRELESS_REGDOM="IL"' ]] || fail "an older timezone name still gives its country" "$(cat "$conf")"
+pass "a timezone under its older name gets the country of the zone it links to"
+
+fresh_root
+older_names
+timezone=Iceland
+configure_timezone >/dev/null
+[[ -z $(regdom_lines) && ! -s $calls ]] || fail "a link to a zone countries share picks none of them" "$(cat "$conf" "$calls")"
+pass "an older name linked to a zone several countries share sets no regulatory domain"
+
 fresh_root
 : >"$tmp/no-wifi"
 timezone=America/New_York
