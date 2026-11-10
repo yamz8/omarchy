@@ -20,8 +20,7 @@ Every subscription on one page, limits first.
   line. Its mark, name, and plan, then a compact line
   per limit window: its meter and the time until it resets (the exact percentage
   on hover). A model-scoped allowance on the same clock (Claude's Fable weekly
-  limit) is a tick on that window's meter rather than a line of its own; the
-  row's tooltip names it. A lapsed or missing Claude, Codex, or Grok sign-in
+  limit) gets a line of its own directly below that window's. A lapsed or missing Claude, Codex, or Grok sign-in
   shows a _Sign-in required_ link that signs that account in again from the
   panel. Any other trouble — a paused token, another agent's sign-in, an
   endpoint that didn't answer — leaves the last known limits on show, with a

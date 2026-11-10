@@ -67,10 +67,6 @@
   "agents.providerLimitsUnavailable": "%1 limits unavailable",
   "agents.providerUnavailable": "%1 unavailable",
   "agents.reopenSignIn": "Open the sign-in page again",
-  "agents.scopedMonthly": "%1: %2% of its monthly allowance",
-  "agents.scopedOther": "%1: %2% of its %3 allowance",
-  "agents.scopedSession": "%1: %2% of its session allowance",
-  "agents.scopedWeekly": "%1: %2% of its weekly allowance",
   "agents.sessionsToday": {
     "one": "%1 session today",
     "other": "%1 sessions today"

@@ -87,20 +87,16 @@ panelRoot.nowMs += 1000
 assertDeepEqual(limitWindows(measured), [{ title: 'Session', percent: 0, resetAt: '' }], 'usage resets at the deadline while the panel stays open')
 assertEqual(measured.limits[0].percent, 0.78, 'display reset leaves the measured record intact')
 
-// A model's weekly allowance rides under the Weekly row; one whose window has
-// no row of its own keeps a row.
+// A model's weekly allowance gets the row below Weekly; one whose window has
+// no row of its own follows the rest.
 assertDeepEqual(
   displayWindows({ limits: [
-    { label: 'Session (5-hour)', percent: 0.94, resetsAt: '' },
-    { label: 'Weekly (7-day)', percent: 0.25, resetsAt: 'w' },
+    { label: 'Opus Monthly', title: 'Opus Monthly', percent: 0.5, resetsAt: '' },
     { label: 'Fable Weekly', title: 'Fable Weekly', percent: 0.09, resetsAt: 'w' },
-    { label: 'Opus Monthly', title: 'Opus Monthly', percent: 0.5, resetsAt: '' }
-  ] }),
-  [
-    { title: 'Session', percent: 0.94, resetAt: '', scoped: [] },
-    { title: 'Weekly', percent: 0.25, resetAt: 'w', scoped: [{ title: 'Fable', percent: 0.09, resetAt: 'w' }] },
-    { title: 'Opus Monthly', percent: 0.5, resetAt: '', scoped: [] }
-  ],
+    { label: 'Weekly (7-day)', percent: 0.25, resetsAt: 'w' },
+    { label: 'Session (5-hour)', percent: 0.94, resetsAt: '' }
+  ] }).map((w) => w.title),
+  ['Weekly', 'Fable Weekly', 'Session', 'Opus Monthly'],
   'agents panel shows a model-scoped window under the window it runs on'
 )
 JS

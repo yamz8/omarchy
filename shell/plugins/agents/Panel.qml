@@ -791,10 +791,9 @@ Panel {
     return out
   }
 
-  // A model-scoped window ("Fable Weekly") is its own allowance, but it runs
-  // on the same clock as the window it's named for, so it's shown attached to
-  // that row rather than as a row of its own. One with nothing to attach to
-  // still gets its own row.
+  // A model-scoped window ("Fable Weekly") is its own allowance on the same
+  // clock as the window it's named for, so its row sits directly below that
+  // one. One with no such window follows the rest.
   function scopedPart(title) {
     var match = String(title || "").match(/^(.+) (Session|Weekly|Monthly)$/)
     return match ? { model: match[1], window: match[2] } : null
@@ -803,23 +802,20 @@ Panel {
   function displayWindows(p) {
     var windows = limitWindows(p)
     var out = []
-    var byTitle = {}
+    var placed = {}
     for (var i = 0; i < windows.length; i++) {
       if (scopedPart(windows[i].title)) continue
-      windows[i].scoped = []
       out.push(windows[i])
-      byTitle[windows[i].title] = windows[i]
-    }
-    for (var j = 0; j < windows.length; j++) {
-      var part = scopedPart(windows[j].title)
-      if (!part) continue
-      var base = byTitle[part.window]
-      if (base) {
-        base.scoped.push({ title: part.model, percent: windows[j].percent, resetAt: windows[j].resetAt })
-      } else {
-        windows[j].scoped = []
-        out.push(windows[j])
+      for (var j = 0; j < windows.length; j++) {
+        var part = scopedPart(windows[j].title)
+        if (part && part.window === windows[i].title && !placed[j]) {
+          placed[j] = true
+          out.push(windows[j])
+        }
       }
+    }
+    for (var k = 0; k < windows.length; k++) {
+      if (scopedPart(windows[k].title) && !placed[k]) out.push(windows[k])
     }
     return out
   }
@@ -865,15 +861,6 @@ Panel {
     if (part && part.window === "Weekly") return Commons.I18n.t("agents.modelWeekly").arg(part.model)
     if (part && part.window === "Monthly") return Commons.I18n.t("agents.modelMonthly").arg(part.model)
     return value
-  }
-
-  function scopedAllowanceText(scoped, windowTitle) {
-    var percent = Commons.I18n.formatNumber(Math.round(scoped.percent * 100))
-    var value = String(windowTitle || "")
-    if (value === "Session") return Commons.I18n.t("agents.scopedSession").arg(scoped.title).arg(percent)
-    if (value === "Weekly") return Commons.I18n.t("agents.scopedWeekly").arg(scoped.title).arg(percent)
-    if (value === "Monthly") return Commons.I18n.t("agents.scopedMonthly").arg(scoped.title).arg(percent)
-    return Commons.I18n.t("agents.scopedOther").arg(scoped.title).arg(percent).arg(windowDisplayTitle(value))
   }
 
   // The collectors write a fixed English status; the ones that reach the
@@ -2667,16 +2654,14 @@ Panel {
     }
   }
 
-  // One line per limit window: title, meter, percentage, and reset. A
-  // model-scoped allowance on the same clock ("Fable" on Weekly) is a marker
-  // on this row's meter, named in the row's tooltip.
+  // One line per limit window: title, meter, and reset; the percentage is in
+  // the tooltip.
   component CompactLimit: Item {
     id: compact
     property var window: null
     // The age of numbers kept past a failed check is shown only on hover.
     property bool stale: false
     property real fetchedAt: 0
-    readonly property var scoped: window && window.scoped ? window.scoped : []
     readonly property bool alarming: window && window.percent >= 0.9
     readonly property real resetMs: root.resetMsFor(window)
     implicitHeight: Math.max(compactTitle.implicitHeight, compactValue.implicitHeight)
@@ -2698,8 +2683,6 @@ Panel {
           lines.push(compact.fetchedAt > 0 && root.nowMs - compact.fetchedAt > 60000
             ? Commons.I18n.t("agents.lastUpdatedAgo").arg(root.formatDuration(root.nowMs - compact.fetchedAt))
             : compact.fetchedAt > 0 ? Commons.I18n.t("agents.lastUpdatedJustNow") : Commons.I18n.t("agents.lastUpdatedUnknown"))
-        for (var i = 0; i < compact.scoped.length; i++)
-          lines.push(root.scopedAllowanceText(compact.scoped[i], compact.window ? compact.window.title : ""))
         return lines.join("\n")
       }
     }
@@ -2723,7 +2706,6 @@ Panel {
       anchors.verticalCenter: parent.verticalCenter
       value: compact.window ? compact.window.percent : -1
       alarming: compact.alarming
-      markers: compact.scoped
     }
 
     // Sized to the widest time left ("19h 40m"), so every meter ends in the
@@ -2758,9 +2740,6 @@ Panel {
     property bool alarming: false
     property real thickness: Math.max(Style.space(4), Math.round(Style.spacing.controlHeight * 0.14))
 
-    // Other allowances on the same clock, drawn as ticks across the track.
-    property var markers: []
-
     implicitHeight: thickness
 
     Rectangle {
@@ -2780,23 +2759,6 @@ Panel {
 
       Behavior on width {
         NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
-      }
-    }
-
-    Repeater {
-      model: meter.markers
-
-      Rectangle {
-        required property var modelData
-        width: Math.max(2, Math.round(meter.thickness * 0.5))
-        height: meter.thickness * 2.5
-        radius: width / 2
-        anchors.verticalCenter: meterTrack.verticalCenter
-        // Explicit x doesn't mirror, so the tick measures from the end the
-        // fill grows from.
-        readonly property real along: root.clamp(meterTrack.width * root.clamp(Number(modelData.percent), 0, 1) - width / 2, 0, meterTrack.width - width)
-        x: LayoutMirroring.enabled ? meterTrack.width - width - along : along
-        color: meter.alarming ? root.urgent : root.foreground
       }
     }
   }
