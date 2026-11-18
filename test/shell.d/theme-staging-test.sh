@@ -120,8 +120,8 @@ grep -q 'hyprland.lua' "$test_tmp/stderr" || fail "omarchy-theme-set names the f
 
 pass "an installed theme keeps its colour and loses everything that runs code"
 
-# icons.theme is staged verbatim and handed to gsettings, so a symlinked one
-# would stage a copy of whatever it points at.
+# A theme's files are staged verbatim, so a symlinked one would stage a copy
+# of whatever it points at.
 linked="$themes/linked"
 mkdir -p "$linked/.git"
 write_colors "$linked/colors.toml"
@@ -204,11 +204,23 @@ done
 
 pass "a theme name cannot climb out of the theme directories"
 
+# omarchy-theme-list shows a folder's own name when it has capitals or spaces, and the picker passes folder names.
+for folder in "Walk Handmade Theme" "Gruvbox"; do
+  mkdir -p "$themes/$folder"
+  write_colors "$themes/$folder/colors.toml"
+  set_theme "$folder" >/dev/null || fail "omarchy-theme-set applies the hand-made theme '$folder'" "$(cat "$test_tmp/stderr")"
+  [[ $(cat "$state/theme.name") == "$folder" ]] || fail "omarchy-theme-set applies '$folder' rather than a theme spelled alike" "$(cat "$state/theme.name")"
+done
+set_theme "Tokyo Night" >/dev/null && [[ $(cat "$state/theme.name") == tokyo-night ]] || fail "omarchy-theme-set finds tokyo-night by its listed name"
+set_theme gruvbox >/dev/null && [[ $(cat "$state/theme.name") == gruvbox ]] || fail "omarchy-theme-set still applies the bundled gruvbox"
+
+pass "a theme is set by the name omarchy-theme-list shows"
+
 # A denylist is only correct while someone adding a template classifies what it
 # generates. Every generated theme file is either denied to an installed theme or
 # recorded here as carrying colour, so a new template fails until it is placed.
 denied=(alacritty.toml foot.ini ghostty.conf kitty.conf gum_env.lua hyprland.lua neovim.lua vscode.json)
-colour_only=(btop.theme chromium.theme claude.json fcitx5-theme.conf helix.toml hermes.yaml hyprland-preview-share-picker.css keyboard.rgb obsidian.css pi.json shell.toml t3code.json vscode-theme.json)
+colour_only=(btop.theme chromium.theme claude.json fcitx5-theme.conf helix.toml herdr-app.json hermes.yaml hyprland-preview-share-picker.css keyboard.rgb obsidian.css pi.json qtengine.colors shell.toml t3code.css t3code.json vscode-theme.json)
 
 for tpl in "$ROOT"/default/themed/*.tpl; do
   generated=$(basename "$tpl" .tpl)
@@ -268,7 +280,7 @@ cat >"$stub_bin/cp" <<'STUB'
 #!/bin/bash
 for arg in "$@"; do
   case ${TEST_FAILURE:-}:$arg in
-    builtin-copy:"$OMARCHY_PATH/themes/new/"* | user-copy:"$HOME/.config/omarchy/themes/new/"* | nested-copy:*/nested/keep.txt)
+    packaged-copy:"$OMARCHY_THEME_INTROS_PATH/"* | builtin-copy:"$OMARCHY_PATH/themes/new/"* | user-copy:"$HOME/.config/omarchy/themes/new/"* | nested-copy:*/nested/keep.txt)
       exit 42
       ;;
   esac
@@ -417,6 +429,11 @@ for failure in lock renderer cancel-render builtin-copy palette template templat
   reset_fixture
   expect_failure "$failure" "$failure failure"
 done
+
+reset_fixture
+mkdir -p "$shipped/themes/new/backgrounds" "$shipped/packaged/new/backgrounds/intros"
+printf 'intro\n' >"$shipped/packaged/new/backgrounds/intros/1.mp4"
+OMARCHY_THEME_INTROS_PATH="$shipped/packaged" expect_failure packaged-copy "packaged intro copy failure"
 
 reset_fixture
 if run_theme rollback; then fail "failed rollback reports failure"; fi
