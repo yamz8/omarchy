@@ -459,17 +459,16 @@ if [[ -f $COLORS_FILE ]]; then
   : >"$mix_table"
   declare -A rendered=()
 
-  # A missing user directory is optional; an unreadable one is not empty.
-  for directory in "$USER_TEMPLATES_DIR" "$TEMPLATES_DIR"; do
-    if [[ -d $directory ]]; then
-      [[ -r $directory && -x $directory ]] || exit 1
-    fi
-  done
-
   shopt -s nullglob
   if [[ $ICONS_ONLY == "true" ]]; then
     template_files=()
   else
+    # A missing user directory is optional; an unreadable one is not empty.
+    for directory in "$USER_TEMPLATES_DIR" "$TEMPLATES_DIR"; do
+      if [[ -d $directory ]]; then
+        [[ -r $directory && -x $directory ]] || exit 1
+      fi
+    done
     template_files=("$USER_TEMPLATES_DIR"/*.tpl "$TEMPLATES_DIR"/*.tpl)
   fi
 
